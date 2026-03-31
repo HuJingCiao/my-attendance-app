@@ -22,15 +22,15 @@
 
     <div class="action-section">
       <div class="clock-display">{{ currentTime }}</div>
-      <van-button 
-        type="primary" 
-        round 
-        size="large" 
-        class="punch-btn"
-        @click="handlePunch"
-      >
-        一鍵上班打卡
-      </van-button>
+     <van-button type="primary" round size="large" class="punch-btn" :disabled="isFinished" @click="handlePunch">
+        {{ buttonText }} </van-button>
+    </div>
+   <div class="records-section" v-if="punchRecords.length > 0">
+      <van-divider>今日打卡紀錄</van-divider>
+      <van-cell-group inset>
+        <van-cell v-for="(item, index) in punchRecords" :key="index" :title="item.type" :value="item.time"
+          :label="item.type === '上班' ? '準時到達' : '準時下班'" />
+      </van-cell-group>
     </div>
 
     <van-tabbar v-model="active">
@@ -42,31 +42,59 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { showSuccessToast } from 'vant'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { showSuccessToast, showConfirmDialog } from 'vant'
 
-const active = ref(0)
+// 1. 定義狀態：'none' (未打卡), 'in' (已上班), 'out' (已下班)
+const punchStatus = ref('none')
+const punchRecords = ref([]) // 儲存今日打卡紀錄
 const currentTime = ref('')
 
-// 更新時鐘
+// 2. 計算屬性：根據狀態決定按鈕文字 (類似 AppSheet 的公式)
+const buttonText = computed(() => {
+  if (punchStatus.value === 'none') return '一鍵上班打卡'
+  if (punchStatus.value === 'in') return '一鍵下班打卡'
+  return '今日已完成打卡'
+})
+
+const isFinished = computed(() => punchStatus.value === 'out')
+
+// 3. 處理打卡動作
+const handlePunch = () => {
+  if (isFinished.value) return
+
+  const now = new Date()
+  const timeString = now.toLocaleTimeString()
+  
+  if (punchStatus.value === 'none') {
+    // 上班邏輯
+    punchStatus.value = 'in'
+    punchRecords.value.push({ type: '上班', time: timeString })
+    showSuccessToast('上班打卡成功！')
+  } else {
+    // 下班邏輯 (增加確認視窗，防止誤觸)
+    showConfirmDialog({
+      title: '下班確認',
+      message: '確定要進行下班打卡嗎？',
+    }).then(() => {
+      punchStatus.value = 'out'
+      punchRecords.value.push({ type: '下班', time: timeString })
+      showSuccessToast('下班打卡成功，辛苦了！')
+    })
+  }
+}
+
+// 時鐘邏輯 (保持不變)
 const updateTime = () => {
   const now = new Date()
   currentTime.value = now.toLocaleTimeString()
 }
-
 let timer
 onMounted(() => {
   updateTime()
   timer = setInterval(updateTime, 1000)
 })
-
-onUnmounted(() => {
-  clearInterval(timer)
-})
-
-const handlePunch = () => {
-  showSuccessToast('上班打卡成功！');
-}
+onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped>
@@ -111,5 +139,10 @@ const handlePunch = () => {
   height: 120px;
   font-size: 24px;
   box-shadow: 0 4px 12px rgba(25, 137, 250, 0.3);
+}
+
+.records-section {
+  margin-top: 30px;
+  padding-bottom: 80px; /* 避免被底部導覽擋住 */
 }
 </style>
