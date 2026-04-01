@@ -9,7 +9,7 @@
         height="80"
         src="https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg"
       />
-      <h2 class="user-name">王小明</h2>
+      <h2 class="user-name">黃小明</h2>
       <p class="user-dept">IT 部門 | 軟體工程師</p>
     </div>
 
@@ -43,12 +43,30 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { showSuccessToast, showConfirmDialog } from 'vant'
+import { showSuccessToast, showConfirmDialog, showFailToast } from 'vant'
+import axios from 'axios' // 匯入通訊工具
 
 // 1. 定義狀態：'none' (未打卡), 'in' (已上班), 'out' (已下班)
 const punchStatus = ref('none')
 const punchRecords = ref([]) // 儲存今日打卡紀錄
 const currentTime = ref('')
+
+// 1. 初始化：從後端取得今日紀錄 (這就是原本 AppSheet 自動載入資料的過程)
+const fetchRecords = async () => {
+  try {
+    const response = await axios.get('http://localhost:3000/api/records')
+    punchRecords.value = response.data
+    
+    // 簡單邏輯：判斷目前狀態
+    if (punchRecords.value.some(r => r.type === '下班')) {
+      punchStatus.value = 'out'
+    } else if (punchRecords.value.some(r => r.type === '上班')) {
+      punchStatus.value = 'in'
+    }
+  } catch (error) {
+    console.error('取得資料失敗', error)
+  }
+}
 
 // 2. 計算屬性：根據狀態決定按鈕文字 (類似 AppSheet 的公式)
 const buttonText = computed(() => {
@@ -60,27 +78,31 @@ const buttonText = computed(() => {
 const isFinished = computed(() => punchStatus.value === 'out')
 
 // 3. 處理打卡動作
-const handlePunch = () => {
-  if (isFinished.value) return
+const handlePunch = async () => {
+  if (punchStatus.value === 'out') return
 
-  const now = new Date()
-  const timeString = now.toLocaleTimeString()
+  const type = punchStatus.value === 'none' ? '上班' : '下班'
   
-  if (punchStatus.value === 'none') {
-    // 上班邏輯
-    punchStatus.value = 'in'
-    punchRecords.value.push({ type: '上班', time: timeString })
-    showSuccessToast('上班打卡成功！')
+  const performAction = async () => {
+    try {
+      // 送信到你的 Node.js 伺服器
+      const response = await axios.post('http://localhost:3000/api/punch', {
+        type: type,
+        user: '王小明' // 暫時寫死，Day 8 會做登入
+      })
+
+      // 成功後更新前端畫面
+      showSuccessToast(response.data.message)
+      fetchRecords() // 重新拉取最新紀錄清單
+    } catch (error) {
+      showFailToast('伺服器連線失敗')
+    }
+  }
+
+  if (type === '下班') {
+    showConfirmDialog({ title: '提醒', message: '確定要下班嗎？' }).then(performAction)
   } else {
-    // 下班邏輯 (增加確認視窗，防止誤觸)
-    showConfirmDialog({
-      title: '下班確認',
-      message: '確定要進行下班打卡嗎？',
-    }).then(() => {
-      punchStatus.value = 'out'
-      punchRecords.value.push({ type: '下班', time: timeString })
-      showSuccessToast('下班打卡成功，辛苦了！')
-    })
+    performAction()
   }
 }
 
@@ -91,6 +113,7 @@ const updateTime = () => {
 }
 let timer
 onMounted(() => {
+  fetchRecords()
   updateTime()
   timer = setInterval(updateTime, 1000)
 })
