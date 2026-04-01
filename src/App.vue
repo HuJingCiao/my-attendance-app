@@ -85,17 +85,19 @@ const handlePunch = async () => {
   
   const performAction = async () => {
     try {
-      // 送信到你的 Node.js 伺服器
       const response = await axios.post('http://localhost:3000/api/punch', {
         type: type,
-        user: '王小明' // 暫時寫死，Day 8 會做登入
-      })
-
-      // 成功後更新前端畫面
-      showSuccessToast(response.data.message)
-      fetchRecords() // 重新拉取最新紀錄清單
+        user: '王小明'
+      });
+      showSuccessToast(response.data.message);
+      fetchRecords();
     } catch (error) {
-      showFailToast('伺服器連線失敗')
+      // 這裡很重要！捕捉後端傳來的 400 錯誤訊息
+      if (error.response && error.response.status === 400) {
+        showFailToast(error.response.data.message);
+      } else {
+        showFailToast('系統異常，請稍後再試');
+      }
     }
   }
 
