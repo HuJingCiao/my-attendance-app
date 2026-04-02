@@ -25,13 +25,16 @@
      <van-button type="primary" round size="large" class="punch-btn" :disabled="isFinished" @click="handlePunch">
         {{ buttonText }} </van-button>
     </div>
-   <div class="records-section" v-if="punchRecords.length > 0">
-      <van-divider>今日打卡紀錄</van-divider>
-      <van-cell-group inset>
-        <van-cell v-for="(item, index) in punchRecords" :key="index" :title="item.type" :value="item.time"
-          :label="item.type === '上班' ? '準時到達' : '準時下班'" />
-      </van-cell-group>
+    <div class="records-section" v-if="punchRecords.length > 0">
+      <van-divider content-position="left">今日行程</van-divider>
+      <van-steps direction="vertical" :active="punchRecords.length - 1">
+        <van-step v-for="(item, index) in punchRecords" :key="index">
+          <h3>{{ item.punch_type }}成功</h3>
+          <p>{{ item.display_time || item.punch_time }}</p>
+        </van-step>         
+      </van-steps>
     </div>
+   <van-empty v-if="punchRecords.length === 0" description="今天尚未有打卡紀錄" image="search" />
 
     <van-tabbar v-model="active">
       <van-tabbar-item icon="clock-o">打卡</van-tabbar-item>
@@ -39,6 +42,11 @@
       <van-tabbar-item icon="user-o">我的</van-tabbar-item>
     </van-tabbar>
   </div>
+  <van-overlay :show="loading" z-index="100">
+    <div style="display: flex; align-items: center; justify-content: center; height: 100%;">
+      <van-loading type="spinner" color="#1989fa" vertical>處理中...</van-loading>
+    </div>
+  </van-overlay>
 </template>
 
 <script setup>
@@ -46,10 +54,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { showSuccessToast, showConfirmDialog, showFailToast } from 'vant'
 import axios from 'axios' // 匯入通訊工具
 
+
 // 1. 定義狀態：'none' (未打卡), 'in' (已上班), 'out' (已下班)
 const punchStatus = ref('none')
 const punchRecords = ref([]) // 儲存今日打卡紀錄
 const currentTime = ref('')
+const loading = ref(false);
 
 // 1. 初始化：從後端取得今日紀錄 (這就是原本 AppSheet 自動載入資料的過程)
 const fetchRecords = async () => {
@@ -79,34 +89,27 @@ const isFinished = computed(() => punchStatus.value === 'out')
 
 // 3. 處理打卡動作
 const handlePunch = async () => {
-  if (punchStatus.value === 'out') return
+  if (isFinished.value || loading.value) return; // 如果正在讀取中，不允許再次點擊
 
-  const type = punchStatus.value === 'none' ? '上班' : '下班'
-  
-  const performAction = async () => {
-    try {
-      const response = await axios.post('http://localhost:3000/api/punch', {
-        type: type,
-        user: '王小明'
-      });
-      showSuccessToast(response.data.message);
-      fetchRecords();
-    } catch (error) {
-      // 這裡很重要！捕捉後端傳來的 400 錯誤訊息
-      if (error.response && error.response.status === 400) {
-        showFailToast(error.response.data.message);
-      } else {
-        showFailToast('系統異常，請稍後再試');
-      }
+  loading.value = true; // 開啟 Loading
+  try {
+    const type = punchStatus.value === 'none' ? '上班' : '下班';
+    const response = await axios.post('http://localhost:3000/api/punch', {
+      type: type,
+      user: '王小明'
+    });
+    showSuccessToast(response.data.message);
+    await fetchRecords(); 
+  } catch (error) {
+    if (error.response && error.response.status === 400) {
+      showFailToast(error.response.data.message);
+    } else {
+      showFailToast('系統異常');
     }
+  } finally {
+    loading.value = false; // 無論成功或失敗，最後都要關閉 Loading
   }
-
-  if (type === '下班') {
-    showConfirmDialog({ title: '提醒', message: '確定要下班嗎？' }).then(performAction)
-  } else {
-    performAction()
-  }
-}
+};
 
 // 時鐘邏輯 (保持不變)
 const updateTime = () => {
