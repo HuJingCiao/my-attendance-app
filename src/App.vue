@@ -2,39 +2,43 @@
   <div class="app-container">
     <van-nav-bar title="員工打卡系統" fixed placeholder />
 
-    <div class="user-card">
-      <van-image
-        round
-        width="80"
-        height="80"
-        src="https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg"
-      />
-      <h2 class="user-name">黃小明</h2>
-      <p class="user-dept">IT 部門 | 軟體工程師</p>
+    <div v-if="!isLogin" class="login-page">
+      <van-nav-bar title="員工系統登入" />
+      <van-form @submit="handleLogin" style="margin-top: 50px;">
+        <van-cell-group inset>
+          <van-field v-model="loginForm.username" label="帳號" placeholder="請輸入帳號" />
+          <van-field v-model="loginForm.password" type="password" label="密碼" placeholder="請輸入密碼" />
+        </van-cell-group>
+        <div style="margin: 16px;">
+          <van-button round block type="primary" native-type="submit">登入</van-button>
+        </div>
+      </van-form>
     </div>
 
-    <div class="message-section">
-      <van-notice-bar
-        left-icon="volume-o"
-        text="☕ 周二衝刺，保持好節奏！祝您有美好的一天。"
-      />
-    </div>
+    <div v-else>
+      <van-nav-bar :title="'你好，' + currentUser.displayName" right-text="登出" @click-right="handleLogout" />
 
-    <div class="action-section">
-      <div class="clock-display">{{ currentTime }}</div>
-     <van-button type="primary" round size="large" class="punch-btn" :disabled="isFinished" @click="handlePunch">
-        {{ buttonText }} </van-button>
+
+      <div class="message-section">
+        <van-notice-bar left-icon="volume-o" text="☕ 周二衝刺，保持好節奏！祝您有美好的一天。" />
+      </div>
+
+      <div class="action-section">
+        <div class="clock-display">{{ currentTime }}</div>
+        <van-button type="primary" round size="large" class="punch-btn" :disabled="isFinished" @click="handlePunch">
+          {{ buttonText }} </van-button>
+      </div>
+      <div class="records-section" v-if="punchRecords.length > 0">
+        <van-divider content-position="left">今日行程</van-divider>
+        <van-steps direction="vertical" :active="punchRecords.length - 1">
+          <van-step v-for="(item, index) in punchRecords" :key="index">
+            <h3>{{ item.punch_type }}成功</h3>
+            <p>{{ item.display_time || item.punch_time }}</p>
+          </van-step>
+        </van-steps>
+      </div>
+      <van-empty v-if="punchRecords.length === 0" description="今天尚未有打卡紀錄" image="search" />
     </div>
-    <div class="records-section" v-if="punchRecords.length > 0">
-      <van-divider content-position="left">今日行程</van-divider>
-      <van-steps direction="vertical" :active="punchRecords.length - 1">
-        <van-step v-for="(item, index) in punchRecords" :key="index">
-          <h3>{{ item.punch_type }}成功</h3>
-          <p>{{ item.display_time || item.punch_time }}</p>
-        </van-step>         
-      </van-steps>
-    </div>
-   <van-empty v-if="punchRecords.length === 0" description="今天尚未有打卡紀錄" image="search" />
 
     <van-tabbar v-model="active">
       <van-tabbar-item icon="clock-o">打卡</van-tabbar-item>
@@ -55,22 +59,33 @@ import { showSuccessToast, showConfirmDialog, showFailToast } from 'vant'
 import axios from 'axios' // 匯入通訊工具
 
 
+
 // 1. 定義狀態：'none' (未打卡), 'in' (已上班), 'out' (已下班)
 const punchStatus = ref('none')
 const punchRecords = ref([]) // 儲存今日打卡紀錄
 const currentTime = ref('')
 const loading = ref(false);
+const isLogin = ref(false);
+const currentUser = ref(null); // 儲存登入後的員工資訊
+
+const loginForm = ref({
+  username: '',
+  password: ''
+});
+
 
 // 1. 初始化：從後端取得今日紀錄 (這就是原本 AppSheet 自動載入資料的過程)
 const fetchRecords = async () => {
   try {
-    const response = await axios.get('http://localhost:3000/api/records')
-    punchRecords.value = response.data
-    
+    const response = await axios.get('http://localhost:3000/api/records', {
+      params: { user: currentUser.value.username }
+    });
+    punchRecords.value = response.data;
+
     // 簡單邏輯：判斷目前狀態
-    if (punchRecords.value.some(r => r.type === '下班')) {
+    if (punchRecords.value.some(r => r.punch_type === '下班')) {
       punchStatus.value = 'out'
-    } else if (punchRecords.value.some(r => r.type === '上班')) {
+    } else if (punchRecords.value.some(r => r.punch_type === '上班')) {
       punchStatus.value = 'in'
     }
   } catch (error) {
@@ -96,10 +111,10 @@ const handlePunch = async () => {
     const type = punchStatus.value === 'none' ? '上班' : '下班';
     const response = await axios.post('http://localhost:3000/api/punch', {
       type: type,
-      user: '王小明'
+      user: currentUser.value.username // 這裡會根據你是用 admin 還是 staff01 登入而改變
     });
     showSuccessToast(response.data.message);
-    await fetchRecords(); 
+    await fetchRecords();
   } catch (error) {
     if (error.response && error.response.status === 400) {
       showFailToast(error.response.data.message);
@@ -117,12 +132,46 @@ const updateTime = () => {
   currentTime.value = now.toLocaleTimeString()
 }
 let timer
-onMounted(() => {
-  fetchRecords()
+onMounted(async () => {
+  const savedUser = localStorage.getItem('user');
+  if (savedUser) {
+    currentUser.value = JSON.parse(savedUser);
+    isLogin.value = true;
+    await fetchRecords();//避免畫面閃爍 用於同步資料
+  }
+
   updateTime()
   timer = setInterval(updateTime, 1000)
 })
 onUnmounted(() => clearInterval(timer))
+
+const handleLogin = async () => {
+  try {
+    const response = await axios.post('http://localhost:3000/api/login', loginForm.value);
+    currentUser.value = response.data.user;
+    isLogin.value = true;
+    localStorage.setItem('user', JSON.stringify(response.data.user));
+    showSuccessToast(`歡迎回來，${currentUser.value.displayName}`);
+    fetchRecords(); // 登入後抓取該員工紀錄
+  } catch (error) {
+    showFailToast('登入失敗，請檢查帳密');
+  }
+};
+
+const handleLogout = () => {
+  showConfirmDialog({
+    title: '提示',
+    message: '確定要登出系統嗎？',
+  }).then(() => {
+    // 1. 清除變數
+    isLogin.value = false;
+    currentUser.value = null;
+    punchRecords.value = [];
+    // 2. 清除快取
+    localStorage.removeItem('user');
+    showSuccessToast('已安全登出');
+  });
+};
 </script>
 
 <style scoped>
@@ -171,6 +220,7 @@ onUnmounted(() => clearInterval(timer))
 
 .records-section {
   margin-top: 30px;
-  padding-bottom: 80px; /* 避免被底部導覽擋住 */
+  padding-bottom: 80px;
+  /* 避免被底部導覽擋住 */
 }
 </style>
