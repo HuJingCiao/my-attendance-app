@@ -1,7 +1,14 @@
+
 {
   "name": "my-attendance-app",
   "private": true,
   "version": "0.0.0",
+  "config": {
+    "npm_config_legacy_peer_deps": "true"
+  },
+  "npmConfig": {
+    "legacy-peer-deps": true
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host",
