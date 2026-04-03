@@ -194,7 +194,7 @@ const handleLogin = async () => {
       username: loginForm.value.username, // 👈 加上 .value.username
       password: loginForm.value.password  // 👈 加上 .value.password
     });
-    console.log("連線雲端成功！", response.data);
+    
 
     const { token, user } = response.data;
     currentUser.value = response.data.user;
