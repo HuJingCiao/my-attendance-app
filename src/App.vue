@@ -108,25 +108,57 @@ const isFinished = computed(() => punchStatus.value === 'out')
 
 // 3. 處理打卡動作
 const handlePunch = async () => {
-  if (isFinished.value || loading.value) return; // 如果正在讀取中，不允許再次點擊
+  if (isFinished.value || loading.value) return;
 
-  loading.value = true; // 開啟 Loading
+  const getLocation = () => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('您的瀏覽器不支持定位功能'));
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve(position.coords),
+        (error) => {
+          // 轉換瀏覽器錯誤代碼為人類看得懂的文字
+          let msg = '定位失敗';
+          if (error.code === 1) msg = '請開啟定位權限';
+          if (error.code === 2) msg = '無法取得位置訊號';
+          if (error.code === 3) msg = '定位超時';
+          reject(new Error(msg));
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    });
+  };
+
+  loading.value = true;
   try {
+    const coords = await getLocation();
+    const { latitude, longitude } = coords;
+
     const type = punchStatus.value === 'none' ? '上班' : '下班';
+    const token = localStorage.getItem('token');
+    
     const response = await axios.post('http://localhost:3000/api/punch', {
       type: type,
-      user: currentUser.value.username // 這裡會根據你是用 admin 還是 staff01 登入而改變
+      lat: latitude,
+      lng: longitude
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
     });
-    showSuccessToast(response.data.message);
+    
+    showSuccessToast(`定位成功！${type}完成`);
     await fetchRecords();
   } catch (error) {
-    if (error.response && error.response.status === 400) {
-      showFailToast(error.response.data.message);
+    // 這裡做了「功能合併」：區分 API 錯誤與定位錯誤
+    if (error.response) {
+      // 這是伺服器回傳的錯誤 (如: 400 重複打卡)
+      showFailToast(error.response.data.message || '伺服器錯誤');
     } else {
-      showFailToast('系統異常');
+      // 這是 getLocation 拋出的錯誤 (如: 沒開 GPS)
+      showFailToast(error.message || '系統異常');
     }
   } finally {
-    loading.value = false; // 無論成功或失敗，最後都要關閉 Loading
+    loading.value = false;
   }
 };
 
