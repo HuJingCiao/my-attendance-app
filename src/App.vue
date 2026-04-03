@@ -76,9 +76,13 @@ const loginForm = ref({
 
 // 1. 初始化：從後端取得今日紀錄 (這就是原本 AppSheet 自動載入資料的過程)
 const fetchRecords = async () => {
+
+  const token = localStorage.getItem('token');
   try {
     const response = await axios.get('http://localhost:3000/api/records', {
-      params: { user: currentUser.value.username }
+      headers: {
+        Authorization: `Bearer ${token}` // 在 Header 放入通行證
+      }
     });
     punchRecords.value = response.data;
 
@@ -89,7 +93,7 @@ const fetchRecords = async () => {
       punchStatus.value = 'in'
     }
   } catch (error) {
-    console.error('取得資料失敗', error)
+    if (error.response?.status === 401) handleLogout();
   }
 }
 
@@ -148,9 +152,14 @@ onUnmounted(() => clearInterval(timer))
 const handleLogin = async () => {
   try {
     const response = await axios.post('http://localhost:3000/api/login', loginForm.value);
+    const { token, user } = response.data;    
     currentUser.value = response.data.user;
     isLogin.value = true;
-    localStorage.setItem('user', JSON.stringify(response.data.user));
+
+    // 同時存下 User 和 Token
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('token', token); // 存下通行證
+
     showSuccessToast(`歡迎回來，${currentUser.value.displayName}`);
     fetchRecords(); // 登入後抓取該員工紀錄
   } catch (error) {
