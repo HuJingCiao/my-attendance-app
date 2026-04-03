@@ -67,6 +67,8 @@ const currentTime = ref('')
 const loading = ref(false);
 const isLogin = ref(false);
 const currentUser = ref(null); // 儲存登入後的員工資訊
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 
 const loginForm = ref({
   username: '',
@@ -79,7 +81,7 @@ const fetchRecords = async () => {
 
   const token = localStorage.getItem('token');
   try {
-    const response = await axios.get('http://localhost:3000/api/records', {
+    const response = await axios.get(`${API_BASE}/api/records`, {
       headers: {
         Authorization: `Bearer ${token}` // 在 Header 放入通行證
       }
@@ -138,7 +140,7 @@ const handlePunch = async () => {
     const type = punchStatus.value === 'none' ? '上班' : '下班';
     const token = localStorage.getItem('token');
     
-    const response = await axios.post('http://localhost:3000/api/punch', {
+    const response = await axios.post(`${API_BASE}/api/punch`, {
       type: type,
       lat: latitude,
       lng: longitude
@@ -178,13 +180,23 @@ onMounted(async () => {
 
   updateTime()
   timer = setInterval(updateTime, 1000)
+  //console.log("目前的 API 網址是：", import.meta.env.VITE_API_URL);
 })
 onUnmounted(() => clearInterval(timer))
 
 const handleLogin = async () => {
+ 
+  console.log(`正在連線到: ${API_BASE}/api/login`);
+
+
   try {
-    const response = await axios.post('http://localhost:3000/api/login', loginForm.value);
-    const { token, user } = response.data;    
+    const response = await axios.post(`${API_BASE}/api/login`, {
+      username: loginForm.value.username, // 👈 加上 .value.username
+      password: loginForm.value.password  // 👈 加上 .value.password
+    });
+    console.log("連線雲端成功！", response.data);
+
+    const { token, user } = response.data;
     currentUser.value = response.data.user;
     isLogin.value = true;
 
@@ -195,7 +207,14 @@ const handleLogin = async () => {
     showSuccessToast(`歡迎回來，${currentUser.value.displayName}`);
     fetchRecords(); // 登入後抓取該員工紀錄
   } catch (error) {
-    showFailToast('登入失敗，請檢查帳密');
+    console.error('登入錯誤詳細資訊:', error);
+    if (error.response) {
+      // 伺服器有回應 (例如 401 帳密錯誤)
+      showFailToast(error.response.data.message || '登入失敗，請檢查帳密');
+    } else {
+      // 伺服器沒回應 (例如後端沒啟動或網址錯誤)
+      showFailToast(`無法連線至伺服器: ${API_BASE}`);
+    }
   }
 };
 
